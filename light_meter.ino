@@ -32,6 +32,7 @@
 #include <avr/sleep.h>
 #include <math.h>
 #include <Wire.h>
+#include "OneButton.h"
 #include <BH1750.h> //for BH1750, https://github.com/claws/BH1750
 #include "SSD1306Ascii.h" //for OLED, https://github.com/greiman/SSD1306Ascii
 #include "SSD1306AsciiAvrI2c.h" //same as above
@@ -41,10 +42,35 @@ SSD1306AsciiAvrI2c oled1306;
 bool started = false; //if user started to use light meter (pressed button)
 int BUTTON_PIN = 5;
 int KNOB_PIN = 1;
-bool buttonMeasurePressed; //status of measure light button
-int buttonState = 0;  // 0 = not pressed   --- 1 = long pressed --- 2 short pressed
-long prev = 0;
-int DURATION_IN_MILLIS = 1000;
+boolean knobSwitchState = false;
+
+boolean ButtonStateShort = false;
+boolean ButtonStateLong = false;
+long buttonTimer = 0;
+long longPressTime = 500;
+boolean buttonActive = false;
+boolean longPressActive = false;
+
+//------------------------------
+
+//// SWITCH ////
+
+static const int buttonPin = 5;                    // switch pin
+int buttonStatePrevious = LOW;                      // previousstate of the switch
+
+unsigned long minButtonLongPressDuration = 3000;    // Time we wait before we see the press as a long press
+unsigned long buttonLongPressMillis;                // Time in ms when we the button was pressed
+bool buttonStateLongPress = false;                  // True if it is a long press
+
+const int intervalButton = 50;                      // Time between two readings of the button state
+unsigned long previousButtonMillis;                 // Timestamp of the latest reading
+
+unsigned long buttonPressDuration;                  // Time the button is pressed in ms
+
+//// GENERAL ////
+
+unsigned long currentMillis;          // Variabele to store the number of milleseconds since the Arduino has started
+//------------------------------
 
 // EEPROM for memory recording
 #define ISOIndexAddr        1
@@ -66,13 +92,20 @@ uint8_t modeIndex =         EEPROM.read(modeIndexAddr);
 uint8_t meteringMode =      EEPROM.read(meteringModeAddr);
 uint8_t ndIndex =           EEPROM.read(ndIndexAddr);
 
-int knobApertureStatus; //status of aperture select knob
-int prevKnobApertureStatus; //previous status of aperture select knob
-int knobISOstatus; //status of ISO select knob
-int prevKnobISOstatus; //previous status of ISO select knob
-long lux; //illuminance
-float EV; //exposure value
-int ISO; //film or digital sensor sensitivity
+int knobStatus;
+int prevKnobStatus;
+int knobAperture;
+int prevknobAperture;
+int knobISO;
+int prevKnobISO;
+
+String menuArrow = "aperture";
+
+float aperture = -1;
+float shutterSpeed = -1;
+long lux = -1; //illuminance
+float EV = -1; //exposure value
+int ISO = 12; //film or digital sensor sensitivity
 const int incidentCalibration = 340; //incident light calibration const, see https://en.wikipedia.org/wiki/Light_meter#Calibration_constants
 
 void setup() {
@@ -118,96 +151,122 @@ void setup() {
 //  lux = getLux();
 //  refresh();
   
-  Serial.println("ArduMeter (Arduino incident light meter for camera) READY:");
-  Serial.println("button -> measure light");
-  Serial.println("knobs -> change aperature/ISO");
+  Serial.println("Button short press -> measure light");
+  Serial.println("Button long press -> switch item");
+  Serial.println("Knob -> change aperature/ISO");
+}
+
+void waitForKnobHasChanged() {
+
+  knobStatus = analogRead(KNOB_PIN);
+  knobAperture = map(knobStatus, 0, 690, 1, 16);
+  knobISO = map(knobStatus, 0, 690, 1, 10);
   
+  if (ButtonStateLong && knobSwitchState) {
+    ButtonStateLong = !ButtonStateLong;
+    knobSwitchState = !knobSwitchState;
+    menuArrow = "aperture";    
+    
+  } else if (ButtonStateLong && !knobSwitchState) {
+    ButtonStateLong = !ButtonStateLong;
+    knobSwitchState = !knobSwitchState;
+    menuArrow = "iso";
+  }
+
+  if ((knobAperture != prevknobAperture) || (knobISO != prevKnobISO)) {
+    if (!knobSwitchState) {
+      //select aperature via potentiometer 1; the values are based on most common aperatures you'll find on digital and analog cameras
+      switch (knobAperture) {
+        case 1: aperture = 1.4; break;
+        case 2: aperture = 1.7; break;
+        case 3: aperture = 2; break;
+        case 4: aperture = 2.8; break;
+        case 5: aperture = 3.5; break;
+        case 6: aperture = 4; break;
+        case 7: aperture = 4.5; break;
+        case 8: aperture = 5.6; break;
+        case 9: aperture = 6.3; break;
+        case 10: aperture = 8; break;
+        case 11: aperture = 10; break;
+        case 12: aperture = 11; break;
+        case 13: aperture = 12.7; break;
+        case 14: aperture = 16; break;
+        case 15: aperture = 22; break;
+        case 16: aperture = 32;
+      } 
+    } else {
+     //select ISO via potentiometer 2; the values are based on common film speeds
+      switch (knobISO) {
+        case 1: ISO = 12; break;
+        case 2: ISO = 25; break;
+        case 3: ISO = 50; break;
+        case 4: ISO = 100; break;
+        case 5: ISO = 160; break;
+        case 6: ISO = 200; break;
+        case 7: ISO = 400; break;
+        case 8: ISO = 800; break;
+        case 9: ISO = 1600; break;
+        case 10: ISO = 3200;
+      }
+    }
+    displayExposureSetting(false);  
+    Serial.print("| knobStatus = ");
+    Serial.print(knobStatus);
+    Serial.print(" | Arr = ");
+    Serial.print(menuArrow);
+    Serial.print(" | knobSw= ");
+    Serial.print(knobSwitchState);
+    Serial.print(" | aperture = ");
+    Serial.print(aperture);
+    Serial.print(" | ISO = ");
+    Serial.println(ISO);
+  }
+
+  //record potentiometer previous status
+  prevKnobStatus = knobStatus;
+  prevKnobISO = knobISO;
+  prevknobAperture = knobAperture;
 }
 
 void loop() {
-
-//  waitForButtonState();
+  currentMillis = millis();
   
-  //read status from button and potentiometers
-  buttonMeasurePressed = digitalRead(BUTTON_PIN);
-//  Serial.println(analogRead(KNOB_PIN));
-  knobApertureStatus = map(analogRead(KNOB_PIN), 0, 690, 1, 16);
-//  knobISOstatus = map(analogRead(3), 60, 600, 1, 10);
-  knobISOstatus = 6;
-  
-  if (buttonMeasurePressed) {
-    //measure light
-    if (!started) started = true;
+  if (!started && digitalRead(BUTTON_PIN) == HIGH) {
+    started = true;
     displayExposureSetting(true);
-  } else {
-    //change aperture/ISO settings
-    if ((knobApertureStatus != prevKnobApertureStatus || knobISOstatus != prevKnobISOstatus) && started) {
-      displayExposureSetting(false);
-    }
+  } else if (!started) {
+    return;
   }
-  //record potentiometer previous status
-  prevKnobApertureStatus = knobApertureStatus;
-  prevKnobISOstatus = knobISOstatus;
+
+  waitForButtonState();
+  waitForKnobHasChanged();
   delay(150);
 }
 
 void displayExposureSetting(bool measureNewExposure) {
-  float aperature;
-  float shutterSpeed;
-  //select aperature via potentiometer 1; the values are based on most common aperatures you'll find on digital and analog cameras
-  switch (knobApertureStatus) {
-    case 1: aperature = 1.4; break;
-    case 2: aperature = 1.7; break;
-    case 3: aperature = 2; break;
-    case 4: aperature = 2.8; break;
-    case 5: aperature = 3.5; break;
-    case 6: aperature = 4; break;
-    case 7: aperature = 4.5; break;
-    case 8: aperature = 5.6; break;
-    case 9: aperature = 6.3; break;
-    case 10: aperature = 8; break;
-    case 11: aperature = 10; break;
-    case 12: aperature = 11; break;
-    case 13: aperature = 12.7; break;
-    case 14: aperature = 16; break;
-    case 15: aperature = 22; break;
-    case 16: aperature = 32;
-  }
-  //select ISO via potentiometer 2; the values are based on common film speeds
-  switch (knobISOstatus) {
-    case 1: ISO = 12; break;
-    case 2: ISO = 25; break;
-    case 3: ISO = 50; break;
-    case 4: ISO = 100; break;
-    case 5: ISO = 160; break;
-    case 6: ISO = 200; break;
-    case 7: ISO = 400; break;
-    case 8: ISO = 800; break;
-    case 9: ISO = 1600; break;
-    case 10: ISO = 3200;
-  }
+  
   if (measureNewExposure) {
     //measure light level (illuminance) and get a new lux value
     lux = bh1750LightMeter.readLightLevel();
     Serial.print("Measured illuminance = ");
     Serial.print(lux);
     Serial.println(" lux");
+    ButtonStateShort = !ButtonStateShort;
   }
   //calculate EV
   EV = (log10(lux * ISO / incidentCalibration) / log10(2));
-  Serial.println(EV);
+//  Serial.println(EV);
   if (isfinite(EV)) {
     //calculate shutter speed if EV is not NaN or infinity
-    shutterSpeed = pow(2, EV) / pow(aperature, 2);
+    shutterSpeed = pow(2, EV) / pow(aperture, 2);
 
-    // -----------------------------------
     //output results to serial port and OLED
     Serial.print("Exposure settings: ISO = ");
     Serial.print(ISO);
     Serial.print(", EV = ");
     Serial.print(EV);
     Serial.print(", aperture = f/");
-    Serial.print(aperature, 1);
+    Serial.print(aperture, 1);
     Serial.print(", ");
     Serial.print("shutter speed = ");
     if (shutterSpeed >= 1) {
@@ -217,98 +276,140 @@ void displayExposureSetting(bool measureNewExposure) {
       Serial.print((1 / shutterSpeed));
     }
     Serial.println("s");
-    oled1306.clear();
-
-    // -----------------------------------
-    drawScreen();
-    
-    drawISO(ISO);
-    drawEV(EV);
-    drawAperture(aperature);
-    drawShutter(shutterSpeed);
-    drawLx(lux);
-
     // -----------------------------------
     
   } else {
     Serial.println("Error: exposure out of bounds");
-    
-    oled1306.clear();
-    drawScreen();
-    drawISO(ISO);
-    drawEV(-1);
-    drawAperture(aperature);
-    drawShutter(-1);
-    drawLx(lux);
+ 
+    EV = -1;
+    shutterSpeed = -1;
   }
+  drawUI();
 }
+
 
 
 void waitForButtonState() {
-  buttonState = 0;
-  if(digitalRead(BUTTON_PIN)) {
-    prev = millis();
-    buttonState = 1;
-    while((millis() - prev) <= DURATION_IN_MILLIS) {
-      if(!(digitalRead(BUTTON_PIN))) {
-        buttonState = 2;
-        break;
+  
+  // If the difference in time between the previous reading is larger than intervalButton
+  if(currentMillis - previousButtonMillis > intervalButton) {
+    
+    // Read the digital value of the button (LOW/HIGH)
+    int buttonState = digitalRead(buttonPin);    
+
+    // If the button has been pushed AND
+    // If the button wasn't pressed before AND
+    // IF there was not already a measurement running to determine how long the button has been pressed
+    if (buttonState == HIGH && buttonStatePrevious == LOW && !buttonStateLongPress) {
+      buttonLongPressMillis = currentMillis;
+      buttonStatePrevious = HIGH;
+      Serial.println("Button pressed");
+    }
+
+    // Calculate how long the button has been pressed
+    buttonPressDuration = currentMillis - buttonLongPressMillis;
+
+    // If the button is pressed AND
+    // If there is no measurement running to determine how long the button is pressed AND
+    // If the time the button has been pressed is larger or equal to the time needed for a long press
+    if (buttonState == HIGH && !buttonStateLongPress && buttonPressDuration >= minButtonLongPressDuration) {
+      buttonStateLongPress = true;
+      Serial.println("Button long pressed");
+      ButtonStateLong = !ButtonStateLong;
+    }
+      
+    // If the button is released AND
+    // If the button was pressed before
+    if (buttonState == LOW && buttonStatePrevious == HIGH) {
+      buttonStatePrevious = LOW;
+      buttonStateLongPress = false;
+      Serial.println("Button released");
+
+      // If there is no measurement running to determine how long the button was pressed AND
+      // If the time the button has been pressed is smaller than the minimal time needed for a long press
+      // Note: The video shows:
+      //       if (!buttonStateLongPress && buttonPressDuration < minButtonLongPressDuration) {
+      //       since buttonStateLongPress is set to FALSE on line 75, !buttonStateLongPress is always TRUE
+      //       and can be removed.
+      if (buttonPressDuration < minButtonLongPressDuration) {
+        Serial.println("Button pressed shortly");
+        ButtonStateShort = !ButtonStateShort;
+        displayExposureSetting(true);
       }
     }
+    
+    // store the current timestamp in previousButtonMillis
+    previousButtonMillis = currentMillis;
   }
 }
 
+void drawUI() {
+  oled1306.clear();
+  drawCursor();
+  drawScreen();
+  drawISO();
+  drawEV();
+  drawAperture();
+  drawShutter();
+  drawLx();
+}
 
-void drawAperture(float aperture) {
+void drawAperture() {
   oled1306.setCursor(12, 1);
   oled1306.println("F " + String(aperture, 1));
 }
 
-void drawShutter(float shutter) {
-  if (shutter < 0) {
+void drawShutter() {
+  if (shutterSpeed < 0) {
     oled1306.setCursor(12, 3);
     oled1306.println("####");
   } else {
     oled1306.setCursor(12, 3);
-    if (shutter >= 1) {
+    if (shutterSpeed >= 1) {
       oled1306.print("1/");
-      oled1306.print(shutter, 0);
+      oled1306.print(shutterSpeed, 0);
     } else {
-      oled1306.print((1 / shutter), 0);
+      oled1306.print((1 / shutterSpeed), 0);
     }
     oled1306.println("s");
   }
 }
 
-void drawISO(int iso) {
-  oled1306.setCursor(70, 0);
-  oled1306.print("ISO ");
-  oled1306.println(iso);
+void drawISO() {
+  if (ISO < 0) {
+    oled1306.setCursor(70, 0);
+    oled1306.print("ISO ");
+    oled1306.println("####");
+  } else {
+    oled1306.setCursor(70, 0);
+    oled1306.print("ISO ");
+    oled1306.println(ISO);
+  }
 }
 
-void drawEV(float ev) {
-  if (ev < 0) {
+void drawEV() {
+  if (EV < 0) {
     oled1306.setCursor(70, 1);
     oled1306.print("EV  ");
     oled1306.println("####");
   } else {
     oled1306.setCursor(70, 1);
     oled1306.print("EV  ");
-    oled1306.println(ev, 2);
+    oled1306.println(EV, 2);
   }
 }
 
-void drawLx(int lx) {
+void drawLx() {
   oled1306.setCursor(70, 3);
-  oled1306.print(lx);
+  oled1306.print(lux);
   oled1306.println(" Lx");
 }
 
-void drawArrow(int pos) {
-  if (pos == 1) {
+void drawCursor() {
+  if (menuArrow == "aperture") {
     oled1306.setCursor(0, 1);
-  } else {
-    oled1306.setCursor(0, 3);
+  } else if (menuArrow == "iso") {
+    oled1306.setCursor(60, 0);
   }
   oled1306.println(">");
 }
