@@ -46,15 +46,8 @@ boolean knobSwitchState = false;
 
 boolean ButtonStateShort = false;
 boolean ButtonStateLong = false;
-long buttonTimer = 0;
-long longPressTime = 500;
-boolean buttonActive = false;
-boolean longPressActive = false;
-
-//------------------------------
 
 //// SWITCH ////
-
 static const int buttonPin = 5;                    // switch pin
 int buttonStatePrevious = LOW;                      // previousstate of the switch
 
@@ -66,8 +59,6 @@ const int intervalButton = 50;                      // Time between two readings
 unsigned long previousButtonMillis;                 // Timestamp of the latest reading
 
 unsigned long buttonPressDuration;                  // Time the button is pressed in ms
-
-//// GENERAL ////
 
 unsigned long currentMillis;          // Variabele to store the number of milleseconds since the Arduino has started
 //------------------------------
@@ -156,81 +147,6 @@ void setup() {
   Serial.println("Knob -> change aperture/ISO");
 }
 
-void waitForKnobHasChanged() {
-
-  knobStatus = analogRead(KNOB_PIN);
-  knobAperture = map(knobStatus, 0, 690, 1, 16);
-  knobISO = map(knobStatus, 0, 690, 1, 10);
-  
-  if (ButtonStateLong && knobSwitchState) {
-    ButtonStateLong = !ButtonStateLong;
-    knobSwitchState = !knobSwitchState;
-    menuArrow = "aperture";
-    drawUI();
-    
-  } else if (ButtonStateLong && !knobSwitchState) {
-    ButtonStateLong = !ButtonStateLong;
-    knobSwitchState = !knobSwitchState;
-    menuArrow = "iso";
-    drawUI();
-  }
-
-  if ((knobAperture != prevknobAperture) || (knobISO != prevKnobISO)) {
-    if (!knobSwitchState) {
-      //select aperature via potentiometer 1; the values are based on most common aperatures you'll find on digital and analog cameras
-      switch (knobAperture) {
-        case 1: aperture = 1.4; break;
-        case 2: aperture = 1.7; break;
-        case 3: aperture = 2; break;
-        case 4: aperture = 2.8; break;
-        case 5: aperture = 3.5; break;
-        case 6: aperture = 4; break;
-        case 7: aperture = 4.5; break;
-        case 8: aperture = 5.6; break;
-        case 9: aperture = 6.3; break;
-        case 10: aperture = 8; break;
-        case 11: aperture = 10; break;
-        case 12: aperture = 11; break;
-        case 13: aperture = 12.7; break;
-        case 14: aperture = 16; break;
-        case 15: aperture = 22; break;
-        case 16: aperture = 32;
-      } 
-    } else {
-     //select ISO via potentiometer 2; the values are based on common film speeds
-      switch (knobISO) {
-        case 1: ISO = 12; break;
-        case 2: ISO = 25; break;
-        case 3: ISO = 50; break;
-        case 4: ISO = 100; break;
-        case 5: ISO = 160; break;
-        case 6: ISO = 200; break;
-        case 7: ISO = 400; break;
-        case 8: ISO = 800; break;
-        case 9: ISO = 1600; break;
-        case 10: ISO = 3200;
-      }
-    }
-    displayExposureSetting(false);  
-    
-//    Serial.print("| knobStatus = ");
-//    Serial.print(knobStatus);
-//    Serial.print(" | Arr = ");
-//    Serial.print(menuArrow);
-//    Serial.print(" | knobSw= ");
-//    Serial.print(knobSwitchState);
-//    Serial.print(" | aperture = ");
-//    Serial.print(aperture);
-//    Serial.print(" | ISO = ");
-//    Serial.println(ISO);
-  }
-
-  //record potentiometer previous status
-  prevKnobStatus = knobStatus;
-  prevKnobISO = knobISO;
-  prevknobAperture = knobAperture;
-}
-
 void loop() {
   currentMillis = millis();
   
@@ -287,6 +203,70 @@ void displayExposureSetting(bool measureNewExposure) {
     
   }
   drawUI();
+}
+
+void waitForKnobHasChanged() {
+
+  knobStatus = analogRead(KNOB_PIN);
+  knobAperture = map(knobStatus, 0, 690, 1, 16);
+  knobISO = map(knobStatus, 0, 690, 1, 10);
+  
+  if (ButtonStateLong && knobSwitchState) {
+    ButtonStateLong = !ButtonStateLong;
+    knobSwitchState = !knobSwitchState;
+    menuArrow = "aperture";
+    drawUI();
+    
+  } else if (ButtonStateLong && !knobSwitchState) {
+    ButtonStateLong = !ButtonStateLong;
+    knobSwitchState = !knobSwitchState;
+    menuArrow = "iso";
+    drawUI();
+  }
+
+  if ((knobAperture != prevknobAperture) || (knobISO != prevKnobISO)) {
+    if (!knobSwitchState) {
+      //select aperature via potentiometer 1; the values are based on most common aperatures you'll find on digital and analog cameras
+      switch (knobAperture) {
+        case 1: aperture = 1.4; break;
+        case 2: aperture = 1.7; break;
+        case 3: aperture = 2; break;
+        case 4: aperture = 2.8; break;
+        case 5: aperture = 3.5; break;
+        case 6: aperture = 4; break;
+        case 7: aperture = 4.5; break;
+        case 8: aperture = 5.6; break;
+        case 9: aperture = 6.3; break;
+        case 10: aperture = 8; break;
+        case 11: aperture = 10; break;
+        case 12: aperture = 11; break;
+        case 13: aperture = 12.7; break;
+        case 14: aperture = 16; break;
+        case 15: aperture = 22; break;
+        case 16: aperture = 32;
+      } 
+    } else {
+     //select ISO via potentiometer 2; the values are based on common film speeds
+      switch (knobISO) {
+        case 1: ISO = 12; break;
+        case 2: ISO = 25; break;
+        case 3: ISO = 50; break;
+        case 4: ISO = 100; break;
+        case 5: ISO = 160; break;
+        case 6: ISO = 200; break;
+        case 7: ISO = 400; break;
+        case 8: ISO = 800; break;
+        case 9: ISO = 1600; break;
+        case 10: ISO = 3200;
+      }
+    }
+    displayExposureSetting(false);
+  }
+
+  //record potentiometer previous status
+  prevKnobStatus = knobStatus;
+  prevKnobISO = knobISO;
+  prevknobAperture = knobAperture;
 }
 
 void waitForButtonState() {
