@@ -58,7 +58,7 @@ boolean longPressActive = false;
 static const int buttonPin = 5;                    // switch pin
 int buttonStatePrevious = LOW;                      // previousstate of the switch
 
-unsigned long minButtonLongPressDuration = 3000;    // Time we wait before we see the press as a long press
+unsigned long minButtonLongPressDuration = 2000;    // Time we wait before we see the press as a long press
 unsigned long buttonLongPressMillis;                // Time in ms when we the button was pressed
 bool buttonStateLongPress = false;                  // True if it is a long press
 
@@ -153,7 +153,7 @@ void setup() {
   
   Serial.println("Button short press -> measure light");
   Serial.println("Button long press -> switch item");
-  Serial.println("Knob -> change aperature/ISO");
+  Serial.println("Knob -> change aperture/ISO");
 }
 
 void waitForKnobHasChanged() {
@@ -165,12 +165,14 @@ void waitForKnobHasChanged() {
   if (ButtonStateLong && knobSwitchState) {
     ButtonStateLong = !ButtonStateLong;
     knobSwitchState = !knobSwitchState;
-    menuArrow = "aperture";    
+    menuArrow = "aperture";
+    drawUI();
     
   } else if (ButtonStateLong && !knobSwitchState) {
     ButtonStateLong = !ButtonStateLong;
     knobSwitchState = !knobSwitchState;
     menuArrow = "iso";
+    drawUI();
   }
 
   if ((knobAperture != prevknobAperture) || (knobISO != prevKnobISO)) {
@@ -210,16 +212,17 @@ void waitForKnobHasChanged() {
       }
     }
     displayExposureSetting(false);  
-    Serial.print("| knobStatus = ");
-    Serial.print(knobStatus);
-    Serial.print(" | Arr = ");
-    Serial.print(menuArrow);
-    Serial.print(" | knobSw= ");
-    Serial.print(knobSwitchState);
-    Serial.print(" | aperture = ");
-    Serial.print(aperture);
-    Serial.print(" | ISO = ");
-    Serial.println(ISO);
+    
+//    Serial.print("| knobStatus = ");
+//    Serial.print(knobStatus);
+//    Serial.print(" | Arr = ");
+//    Serial.print(menuArrow);
+//    Serial.print(" | knobSw= ");
+//    Serial.print(knobSwitchState);
+//    Serial.print(" | aperture = ");
+//    Serial.print(aperture);
+//    Serial.print(" | ISO = ");
+//    Serial.println(ISO);
   }
 
   //record potentiometer previous status
@@ -276,18 +279,15 @@ void displayExposureSetting(bool measureNewExposure) {
       Serial.print((1 / shutterSpeed));
     }
     Serial.println("s");
-    // -----------------------------------
-    
+
   } else {
     Serial.println("Error: exposure out of bounds");
- 
     EV = -1;
     shutterSpeed = -1;
+    
   }
   drawUI();
 }
-
-
 
 void waitForButtonState() {
   
